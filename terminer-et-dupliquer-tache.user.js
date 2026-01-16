@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.2.0
+// @version      1.3.0
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -16,47 +16,40 @@
 
     const STORAGE_KEY = 'ltoa_task_duplicate_data';
 
-    // Observer pour détecter l'ouverture de la modale de tâche
+    // Observer pour détecter les modales
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
             mutation.addedNodes.forEach((node) => {
                 if (node.nodeType === 1) {
-                    // Modale de visualisation de tâche
+                    // Modale de visualisation de tâche existante
                     const taskContainer = node.querySelector?.('#task_container') || 
                                          (node.id === 'task_container' ? node : null);
                     if (taskContainer && taskContainer.dataset.task_id) {
                         setTimeout(() => ajouterBoutonDupliquer(taskContainer), 100);
                     }
-                    
-                    // Choix "Ajouter une tâche" / "Ajouter une note"
-                    const radioTaskMode = node.querySelector?.('#task_mode_from_scratch') ||
-                                         document.querySelector('#task_mode_from_scratch');
-                    if (radioTaskMode && localStorage.getItem(STORAGE_KEY)) {
-                        setTimeout(() => selectionnerAjouterTache(), 200);
-                    }
-                    
-                    // Formulaire de création de tâche
-                    const taskForm = node.querySelector?.('form[data-callback="Modulr.Task.Save"]') ||
-                                    node.querySelector?.('#task_form') ||
-                                    node.querySelector?.('input[name="task_label"]');
-                    if (taskForm && localStorage.getItem(STORAGE_KEY)) {
-                        setTimeout(() => preRemplirFormulaire(), 300);
-                    }
                 }
             });
         });
+        
+        // Vérifier si on a des données à pré-remplir et si le formulaire est visible
+        if (localStorage.getItem(STORAGE_KEY)) {
+            const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
+            if (labelTache && labelTache.offsetParent !== null) {
+                setTimeout(() => selectionnerEtRemplir(), 300);
+            }
+        }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
 
+    // Vérification initiale
     setTimeout(() => {
         const taskContainer = document.querySelector('#task_container[data-task_id]');
         if (taskContainer) {
             ajouterBoutonDupliquer(taskContainer);
         }
         if (localStorage.getItem(STORAGE_KEY)) {
-            selectionnerAjouterTache();
-            preRemplirFormulaire();
+            selectionnerEtRemplir();
         }
     }, 500);
 
@@ -96,12 +89,15 @@
             return;
         }
 
+        console.log('[LTOA] Données extraites:', taskData);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(taskData));
 
+        // Cliquer sur "Tâche terminée"
         const btnTerminee = taskContainer.querySelector('a[data-status="close"]');
         if (btnTerminee) {
             btnTerminee.click();
             
+            // Attendre puis ouvrir la création de tâche
             setTimeout(() => {
                 ouvrirNouveauTask(taskData.entityId, taskData.entityClassName);
             }, 800);
@@ -115,27 +111,38 @@
             entityClassName: taskContainer.dataset.entity_class_name || 'Client',
             libelle: '',
             description: '',
-            assignee: '',
-            assigneeId: ''
+            assignee: ''
         };
 
+        // Libellé (titre h2)
         const h2 = taskContainer.querySelector('h2.no_margin');
         if (h2) {
             data.libelle = h2.textContent.trim();
         }
 
-        const descP = taskContainer.querySelector('table.table_list tr:nth-child(2) p, table.table_list tbody tr + tr p');
+        // Description (paragraphe dans la 2e ligne du tableau)
+        const descP = taskContainer.querySelector('table.table_list tbody tr:nth-child(2) p');
         if (descP) {
-            data.description = descP.innerHTML.trim();
+            // Convertir les <br> en retours à la ligne
+            let desc = descP.innerHTML;
+            desc = desc.replace(/<br\s*\/?>/gi, '\n');
+            // Retirer les autres balises HTML
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = desc;
+            data.description = tempDiv.textContent || tempDiv.innerText || '';
         }
 
+        // Assignée à - chercher le label et prendre le texte après
         const labels = taskContainer.querySelectorAll('.task_details label');
         labels.forEach(label => {
-            if (label.textContent.includes('Assignée à')) {
+            if (label.textContent.trim() === 'Assignée à') {
                 const parent = label.closest('p');
                 if (parent) {
-                    const fullText = parent.textContent;
-                    data.assignee = fullText.replace('Assignée à', '').trim();
+                    // Prendre tout le texte sauf le label
+                    const clone = parent.cloneNode(true);
+                    const labelInClone = clone.querySelector('label');
+                    if (labelInClone) labelInClone.remove();
+                    data.assignee = clone.textContent.trim();
                 }
             }
         });
@@ -144,101 +151,104 @@
     }
 
     function ouvrirNouveauTask(entityId, entityClassName) {
-        const btnAdd = document.querySelector(`a.task_manage[id^="task:0:"]`);
+        const btnAdd = document.querySelector('a.task_manage[id^="task:0:"]');
         
         if (btnAdd) {
             btnAdd.click();
-            // Attendre que la modale s'ouvre puis cliquer sur "Ajouter une tâche"
-            setTimeout(() => selectionnerAjouterTache(), 500);
+            // Attendre que la modale s'ouvre
+            setTimeout(() => selectionnerEtRemplir(), 600);
         } else {
             if (typeof Modulr !== 'undefined' && Modulr.Task && Modulr.Task.Manage) {
                 Modulr.Task.Manage(0, entityClassName, entityId);
-                setTimeout(() => selectionnerAjouterTache(), 500);
-            } else {
-                const anyAddBtn = document.querySelector('a.task_manage[id*="task:0"]');
-                if (anyAddBtn) {
-                    anyAddBtn.click();
-                    setTimeout(() => selectionnerAjouterTache(), 500);
-                }
+                setTimeout(() => selectionnerEtRemplir(), 600);
             }
         }
     }
 
-    function selectionnerAjouterTache() {
-        // Chercher le radio button "Ajouter une tâche"
-        const radioTache = document.querySelector('#task_mode_from_scratch');
-        const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
-        
-        if (radioTache) {
-            radioTache.checked = true;
-            radioTache.dispatchEvent(new Event('change', { bubbles: true }));
-            radioTache.dispatchEvent(new Event('click', { bubbles: true }));
-        }
-        
-        if (labelTache) {
-            labelTache.click();
-        }
-        
-        // Attendre que le formulaire s'affiche puis pré-remplir
-        setTimeout(() => preRemplirFormulaire(), 500);
-    }
-
-    function preRemplirFormulaire() {
+    function selectionnerEtRemplir() {
         const savedData = localStorage.getItem(STORAGE_KEY);
         if (!savedData) return;
 
         const data = JSON.parse(savedData);
+        console.log('[LTOA] Pré-remplissage avec:', data);
 
-        // Libellé - essayer plusieurs sélecteurs possibles
-        const inputLibelle = document.querySelector('input[name="task_label"], input[name="label"], #task_label, input[name="event_label"]');
+        // 1. Cliquer sur "Ajouter une tâche"
+        const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
+        const radioTache = document.querySelector('#task_mode_from_scratch');
+        
+        if (labelTache) {
+            labelTache.click();
+            console.log('[LTOA] Cliqué sur Ajouter une tâche');
+        }
+        if (radioTache) {
+            radioTache.checked = true;
+            radioTache.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // 2. Attendre que les champs apparaissent puis les remplir
+        setTimeout(() => {
+            remplirChamps(data);
+        }, 400);
+    }
+
+    function remplirChamps(data) {
+        console.log('[LTOA] Remplissage des champs...');
+
+        // Libellé - #task_name
+        const inputLibelle = document.querySelector('#task_name');
         if (inputLibelle && data.libelle) {
             inputLibelle.value = data.libelle;
             inputLibelle.dispatchEvent(new Event('input', { bubbles: true }));
             inputLibelle.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log('[LTOA] Libellé rempli:', data.libelle);
         }
 
-        // Description - essayer plusieurs sélecteurs possibles
-        const textareaDesc = document.querySelector('textarea[name="task_content"], textarea[name="content"], #task_content, textarea[name="event_content"]');
+        // Description - #task_note
+        const textareaDesc = document.querySelector('#task_note');
         if (textareaDesc && data.description) {
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = data.description;
-            textareaDesc.value = tempDiv.textContent || tempDiv.innerText;
+            textareaDesc.value = data.description;
             textareaDesc.dispatchEvent(new Event('input', { bubbles: true }));
             textareaDesc.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log('[LTOA] Description remplie');
         }
 
-        // TinyMCE (si utilisé)
-        setTimeout(() => {
-            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = data.description || '';
-                tinymce.activeEditor.setContent(tempDiv.textContent || tempDiv.innerText || '');
-            }
-        }, 500);
-
-        // Assigné - essayer plusieurs sélecteurs possibles
-        const selectAssignee = document.querySelector('select[name="task_user_id"], select[name="user_id"], #task_user_id, select[name="event_user_id"]');
+        // Assigné - #task_actor (select avec valeurs type "user:24")
+        const selectAssignee = document.querySelector('#task_actor');
         if (selectAssignee && data.assignee) {
             const options = selectAssignee.querySelectorAll('option');
+            let found = false;
+            
             options.forEach(opt => {
-                if (opt.textContent.trim().toLowerCase().includes(data.assignee.toLowerCase()) ||
-                    data.assignee.toLowerCase().includes(opt.textContent.trim().toLowerCase())) {
+                const optText = opt.textContent.trim().toLowerCase();
+                const assigneeText = data.assignee.toLowerCase();
+                
+                // Correspondance souple (contient ou est contenu)
+                if (optText.includes(assigneeText) || assigneeText.includes(optText)) {
                     selectAssignee.value = opt.value;
-                    selectAssignee.dispatchEvent(new Event('change', { bubbles: true }));
+                    found = true;
+                    console.log('[LTOA] Assigné trouvé:', opt.textContent, '=', opt.value);
                 }
             });
-            
-            setTimeout(() => {
-                if (typeof $ !== 'undefined' && $(selectAssignee).multipleSelect) {
-                    $(selectAssignee).multipleSelect('refresh');
-                }
-            }, 100);
+
+            if (found) {
+                selectAssignee.dispatchEvent(new Event('change', { bubbles: true }));
+                
+                // Mettre à jour le multipleSelect si présent
+                setTimeout(() => {
+                    try {
+                        if (typeof $ !== 'undefined' && $(selectAssignee).multipleSelect) {
+                            $(selectAssignee).multipleSelect('refresh');
+                        }
+                    } catch (e) {
+                        console.log('[LTOA] multipleSelect refresh error:', e);
+                    }
+                }, 100);
+            }
         }
 
-        // Nettoyer après utilisation (avec un petit délai pour être sûr)
-        setTimeout(() => {
-            localStorage.removeItem(STORAGE_KEY);
-        }, 1000);
+        // Nettoyer le localStorage
+        localStorage.removeItem(STORAGE_KEY);
+        console.log('[LTOA] Terminé !');
     }
 
 })();
