@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.6.0
+// @version      1.7.0
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -16,42 +16,24 @@
 
     const STORAGE_KEY = 'ltoa_task_duplicate_data';
 
-    const observer = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-            mutation.addedNodes.forEach((node) => {
-                if (node.nodeType === 1) {
-                    const taskContainer = node.querySelector?.('#task_container') || 
-                                         (node.id === 'task_container' ? node : null);
-                    if (taskContainer && taskContainer.dataset.task_id) {
-                        setTimeout(() => ajouterBoutonDupliquer(taskContainer), 100);
-                    }
-                }
-            });
-        });
+    const observer = new MutationObserver(() => {
+        const taskContainer = document.querySelector('#task_container[data-task_id]');
+        if (taskContainer && !taskContainer.querySelector('.ltoa-dupliquer-btn')) {
+            ajouterBoutonDupliquer(taskContainer);
+        }
         
+        // Si on a des données à remplir et que le formulaire est visible
         if (localStorage.getItem(STORAGE_KEY)) {
-            const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
-            if (labelTache && labelTache.offsetParent !== null) {
-                setTimeout(() => selectionnerEtRemplir(), 300);
+            const taskName = document.querySelector('#task_name');
+            if (taskName && taskName.offsetParent !== null) {
+                remplirFormulaire();
             }
         }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    setTimeout(() => {
-        const taskContainer = document.querySelector('#task_container[data-task_id]');
-        if (taskContainer) {
-            ajouterBoutonDupliquer(taskContainer);
-        }
-        if (localStorage.getItem(STORAGE_KEY)) {
-            selectionnerEtRemplir();
-        }
-    }, 500);
-
     function ajouterBoutonDupliquer(taskContainer) {
-        if (taskContainer.querySelector('.ltoa-dupliquer-btn')) return;
-
         const btnBar = taskContainer.querySelector('.bg_silverlight table tbody tr');
         if (!btnBar) return;
 
@@ -66,197 +48,132 @@
             </a>
         `;
 
-        const cellTerminee = btnTerminee.closest('td');
-        cellTerminee.parentNode.insertBefore(newCell, cellTerminee);
+        btnTerminee.closest('td').parentNode.insertBefore(newCell, btnTerminee.closest('td'));
 
-        const btnDupliquer = newCell.querySelector('.ltoa-dupliquer-btn');
-        btnDupliquer.addEventListener('click', (e) => {
+        newCell.querySelector('.ltoa-dupliquer-btn').addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            terminerEtDupliquer(taskContainer);
-        });
-    }
-
-    function terminerEtDupliquer(taskContainer) {
-        const taskData = extraireDonneesTache(taskContainer);
-        
-        if (!taskData.libelle) {
-            alert('Impossible de récupérer les données de la tâche');
-            return;
-        }
-
-        console.log('[LTOA] Données extraites:', taskData);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(taskData));
-
-        const btnTerminee = taskContainer.querySelector('a[data-status="close"]');
-        if (btnTerminee) {
-            btnTerminee.click();
             
-            setTimeout(() => {
-                ouvrirNouveauTask(taskData.entityId, taskData.entityClassName);
-            }, 800);
-        }
-    }
+            // Extraire les données
+            const data = {
+                entityId: taskContainer.dataset.entity_id,
+                entityClassName: taskContainer.dataset.entity_class_name || 'Client',
+                libelle: taskContainer.querySelector('h2.no_margin')?.textContent.trim() || '',
+                description: '',
+                assignee: ''
+            };
 
-    function extraireDonneesTache(taskContainer) {
-        const data = {
-            taskId: taskContainer.dataset.task_id,
-            entityId: taskContainer.dataset.entity_id,
-            entityClassName: taskContainer.dataset.entity_class_name || 'Client',
-            libelle: '',
-            description: '',
-            assignee: ''
-        };
+            // Description
+            const descP = taskContainer.querySelector('table.table_list tbody tr:nth-child(2) p');
+            if (descP) {
+                data.description = descP.innerHTML.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '');
+            }
 
-        const h2 = taskContainer.querySelector('h2.no_margin');
-        if (h2) {
-            data.libelle = h2.textContent.trim();
-        }
-
-        const descP = taskContainer.querySelector('table.table_list tbody tr:nth-child(2) p');
-        if (descP) {
-            let desc = descP.innerHTML;
-            desc = desc.replace(/<br\s*\/?>/gi, '\n');
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = desc;
-            data.description = tempDiv.textContent || tempDiv.innerText || '';
-        }
-
-        const labels = taskContainer.querySelectorAll('.task_details label');
-        labels.forEach(label => {
-            if (label.textContent.trim() === 'Assignée à') {
-                const parent = label.closest('p');
-                if (parent) {
-                    const clone = parent.cloneNode(true);
-                    const labelInClone = clone.querySelector('label');
-                    if (labelInClone) labelInClone.remove();
-                    data.assignee = clone.textContent.trim();
+            // Assignée à
+            taskContainer.querySelectorAll('.task_details label').forEach(label => {
+                if (label.textContent.trim() === 'Assignée à') {
+                    const p = label.closest('p');
+                    if (p) {
+                        data.assignee = p.textContent.replace('Assignée à', '').trim();
+                    }
                 }
-            }
+            });
+
+            console.log('[LTOA] Données:', data);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+
+            // Terminer la tâche
+            btnTerminee.click();
+
+            // Ouvrir nouvelle tâche après 800ms
+            setTimeout(() => {
+                const btnAdd = document.querySelector('a.task_manage[id^="task:0:"]');
+                if (btnAdd) btnAdd.click();
+                
+                // Cliquer sur "Ajouter une tâche" après 500ms
+                setTimeout(() => {
+                    const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
+                    if (labelTache) labelTache.click();
+                }, 500);
+            }, 800);
         });
-
-        return data;
     }
 
-    function ouvrirNouveauTask(entityId, entityClassName) {
-        const btnAdd = document.querySelector('a.task_manage[id^="task:0:"]');
-        
-        if (btnAdd) {
-            btnAdd.click();
-            setTimeout(() => selectionnerEtRemplir(), 600);
-        } else {
-            if (typeof Modulr !== 'undefined' && Modulr.Task && Modulr.Task.Manage) {
-                Modulr.Task.Manage(0, entityClassName, entityId);
-                setTimeout(() => selectionnerEtRemplir(), 600);
-            }
-        }
-    }
-
-    function selectionnerEtRemplir() {
+    function remplirFormulaire() {
         const savedData = localStorage.getItem(STORAGE_KEY);
         if (!savedData) return;
 
         const data = JSON.parse(savedData);
-        console.log('[LTOA] Pré-remplissage avec:', data);
-
-        const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
-        const radioTache = document.querySelector('#task_mode_from_scratch');
-        
-        if (labelTache) {
-            labelTache.click();
-            console.log('[LTOA] Cliqué sur Ajouter une tâche');
-        }
-        if (radioTache) {
-            radioTache.checked = true;
-            radioTache.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        setTimeout(() => {
-            remplirChamps(data);
-        }, 500);
-    }
-
-    function remplirChamps(data) {
-        console.log('[LTOA] Remplissage des champs...');
+        console.log('[LTOA] Remplissage:', data);
 
         // Libellé
         const inputLibelle = document.querySelector('#task_name');
-        if (inputLibelle && data.libelle) {
+        if (inputLibelle) {
             inputLibelle.value = data.libelle;
             inputLibelle.dispatchEvent(new Event('input', { bubbles: true }));
-            inputLibelle.dispatchEvent(new Event('change', { bubbles: true }));
-            console.log('[LTOA] Libellé rempli:', data.libelle);
         }
 
         // Description
         const textareaDesc = document.querySelector('#task_note');
-        if (textareaDesc && data.description) {
+        if (textareaDesc) {
             textareaDesc.value = data.description;
             textareaDesc.dispatchEvent(new Event('input', { bubbles: true }));
-            textareaDesc.dispatchEvent(new Event('change', { bubbles: true }));
-            console.log('[LTOA] Description remplie');
         }
 
-        // Assigné
+        // Assigné - approche directe
         if (data.assignee) {
-            selectionnerAssigne(data.assignee);
+            const selectAssignee = document.querySelector('#task_actor');
+            if (selectAssignee) {
+                // 1. Trouver la bonne valeur user:XX
+                let userValue = null;
+                let userName = null;
+                for (const opt of selectAssignee.options) {
+                    if (opt.value.startsWith('user:') && 
+                        opt.textContent.trim().toLowerCase().includes(data.assignee.toLowerCase())) {
+                        userValue = opt.value;
+                        userName = opt.textContent.trim();
+                        break;
+                    }
+                }
+
+                if (userValue) {
+                    console.log('[LTOA] Assigné trouvé:', userName, '=', userValue);
+                    
+                    // 2. Mettre la valeur dans le select caché
+                    selectAssignee.value = userValue;
+                    
+                    // 3. Trouver le ms-parent associé et mettre à jour le bouton
+                    const msParent = selectAssignee.nextElementSibling;
+                    if (msParent && msParent.classList.contains('ms-parent')) {
+                        const msChoice = msParent.querySelector('.ms-choice');
+                        const msSpan = msChoice?.querySelector('span');
+                        if (msSpan) {
+                            msSpan.textContent = ' ' + userName;
+                            msChoice.setAttribute('title', ' ' + userName);
+                        }
+                        
+                        // 4. Cocher le bon radio dans le dropdown
+                        const radio = msParent.querySelector(`input[type="radio"][value="${userValue}"]`);
+                        if (radio) {
+                            // Décocher tous les autres
+                            msParent.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
+                            msParent.querySelectorAll('li').forEach(li => li.classList.remove('selected'));
+                            
+                            // Cocher celui-ci
+                            radio.checked = true;
+                            radio.closest('li')?.classList.add('selected');
+                        }
+                    }
+                    
+                    console.log('[LTOA] Assigné sélectionné !');
+                } else {
+                    console.log('[LTOA] Assigné non trouvé:', data.assignee);
+                }
+            }
         }
 
         localStorage.removeItem(STORAGE_KEY);
         console.log('[LTOA] Terminé !');
-    }
-
-    function selectionnerAssigne(assigneeName) {
-        console.log('[LTOA] Recherche assigné:', assigneeName);
-        
-        // Trouver la valeur user:XX correspondant au nom dans le select caché
-        const selectAssignee = document.querySelector('#task_actor');
-        if (!selectAssignee) {
-            console.log('[LTOA] Select #task_actor non trouvé');
-            return;
-        }
-
-        let userValue = null;
-        const options = selectAssignee.querySelectorAll('option');
-        
-        for (const opt of options) {
-            const optText = opt.textContent.trim().toLowerCase();
-            const assigneeText = assigneeName.toLowerCase();
-            
-            // Match si le nom correspond (insensible à la casse)
-            if (opt.value.startsWith('user:') && 
-                (optText === assigneeText || 
-                 optText.includes(assigneeText) || 
-                 assigneeText.includes(optText))) {
-                userValue = opt.value;
-                console.log('[LTOA] Trouvé:', opt.textContent.trim(), '=', userValue);
-                break;
-            }
-        }
-
-        if (!userValue) {
-            console.log('[LTOA] Assigné non trouvé dans les options:', assigneeName);
-            return;
-        }
-
-        // Utiliser l'API jQuery multipleSelect pour sélectionner
-        try {
-            // Méthode 1: setSelects
-            $('#task_actor').multipleSelect('setSelects', [userValue]);
-            console.log('[LTOA] multipleSelect setSelects OK');
-        } catch(e) {
-            console.log('[LTOA] Erreur setSelects:', e);
-            
-            // Méthode 2: Fallback - set value + trigger change
-            try {
-                selectAssignee.value = userValue;
-                $(selectAssignee).trigger('change');
-                $('#task_actor').multipleSelect('refresh');
-                console.log('[LTOA] Fallback refresh OK');
-            } catch(e2) {
-                console.log('[LTOA] Erreur fallback:', e2);
-            }
-        }
     }
 
 })();
