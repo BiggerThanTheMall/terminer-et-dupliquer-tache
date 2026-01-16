@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.5.0
+// @version      1.6.0
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -16,7 +16,6 @@
 
     const STORAGE_KEY = 'ltoa_task_duplicate_data';
 
-    // Observer pour détecter les modales
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
             mutation.addedNodes.forEach((node) => {
@@ -210,61 +209,54 @@
     function selectionnerAssigne(assigneeName) {
         console.log('[LTOA] Recherche assigné:', assigneeName);
         
-        // Cibler spécifiquement les radios du select "task_actors_list_id"
-        const radios = document.querySelectorAll('input[type="radio"][name="selectItemtask_actors_list_id"]');
+        // Trouver la valeur user:XX correspondant au nom dans le select caché
+        const selectAssignee = document.querySelector('#task_actor');
+        if (!selectAssignee) {
+            console.log('[LTOA] Select #task_actor non trouvé');
+            return;
+        }
+
+        let userValue = null;
+        const options = selectAssignee.querySelectorAll('option');
         
-        console.log('[LTOA] Radios trouvés:', radios.length);
-        
-        for (const radio of radios) {
-            // Ne prendre que les users (pas les listes)
-            if (!radio.value.startsWith('user:')) continue;
+        for (const opt of options) {
+            const optText = opt.textContent.trim().toLowerCase();
+            const assigneeText = assigneeName.toLowerCase();
             
-            const label = radio.closest('label');
-            if (!label) continue;
-            
-            const labelText = label.textContent.trim();
-            const title = label.getAttribute('title') || labelText;
-            
-            console.log('[LTOA] Checking:', title, '=', radio.value);
-            
-            // Correspondance insensible à la casse
-            if (title.toLowerCase() === assigneeName.toLowerCase() ||
-                labelText.toLowerCase() === assigneeName.toLowerCase() ||
-                title.toLowerCase().includes(assigneeName.toLowerCase()) ||
-                assigneeName.toLowerCase().includes(title.toLowerCase())) {
-                
-                console.log('[LTOA] MATCH ! Sélection de:', title);
-                
-                // Cocher le radio
-                radio.checked = true;
-                
-                // Déclencher les events
-                radio.dispatchEvent(new Event('change', { bubbles: true }));
-                radio.dispatchEvent(new Event('click', { bubbles: true }));
-                
-                // Cliquer sur le label
-                label.click();
-                
-                // Mettre à jour le select caché aussi
-                const selectAssignee = document.querySelector('#task_actor');
-                if (selectAssignee) {
-                    selectAssignee.value = radio.value;
-                    selectAssignee.dispatchEvent(new Event('change', { bubbles: true }));
-                    
-                    // Forcer refresh multipleSelect via jQuery
-                    try {
-                        $(selectAssignee).multipleSelect('setSelects', [radio.value]);
-                    } catch(e) {
-                        console.log('[LTOA] multipleSelect setSelects error:', e);
-                    }
-                }
-                
-                console.log('[LTOA] Assigné sélectionné !');
-                return;
+            // Match si le nom correspond (insensible à la casse)
+            if (opt.value.startsWith('user:') && 
+                (optText === assigneeText || 
+                 optText.includes(assigneeText) || 
+                 assigneeText.includes(optText))) {
+                userValue = opt.value;
+                console.log('[LTOA] Trouvé:', opt.textContent.trim(), '=', userValue);
+                break;
             }
         }
-        
-        console.log('[LTOA] Assigné NON trouvé:', assigneeName);
+
+        if (!userValue) {
+            console.log('[LTOA] Assigné non trouvé dans les options:', assigneeName);
+            return;
+        }
+
+        // Utiliser l'API jQuery multipleSelect pour sélectionner
+        try {
+            // Méthode 1: setSelects
+            $('#task_actor').multipleSelect('setSelects', [userValue]);
+            console.log('[LTOA] multipleSelect setSelects OK');
+        } catch(e) {
+            console.log('[LTOA] Erreur setSelects:', e);
+            
+            // Méthode 2: Fallback - set value + trigger change
+            try {
+                selectAssignee.value = userValue;
+                $(selectAssignee).trigger('change');
+                $('#task_actor').multipleSelect('refresh');
+                console.log('[LTOA] Fallback refresh OK');
+            } catch(e2) {
+                console.log('[LTOA] Erreur fallback:', e2);
+            }
+        }
     }
 
 })();
