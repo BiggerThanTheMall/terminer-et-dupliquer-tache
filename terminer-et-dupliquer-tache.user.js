@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.1.0
+// @version      1.2.0
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -21,16 +21,26 @@
         mutations.forEach((mutation) => {
             mutation.addedNodes.forEach((node) => {
                 if (node.nodeType === 1) {
+                    // Modale de visualisation de tâche
                     const taskContainer = node.querySelector?.('#task_container') || 
                                          (node.id === 'task_container' ? node : null);
                     if (taskContainer && taskContainer.dataset.task_id) {
                         setTimeout(() => ajouterBoutonDupliquer(taskContainer), 100);
                     }
                     
+                    // Choix "Ajouter une tâche" / "Ajouter une note"
+                    const radioTaskMode = node.querySelector?.('#task_mode_from_scratch') ||
+                                         document.querySelector('#task_mode_from_scratch');
+                    if (radioTaskMode && localStorage.getItem(STORAGE_KEY)) {
+                        setTimeout(() => selectionnerAjouterTache(), 200);
+                    }
+                    
+                    // Formulaire de création de tâche
                     const taskForm = node.querySelector?.('form[data-callback="Modulr.Task.Save"]') ||
-                                    node.querySelector?.('#task_form');
-                    if (taskForm) {
-                        setTimeout(() => preRemplirFormulaire(), 200);
+                                    node.querySelector?.('#task_form') ||
+                                    node.querySelector?.('input[name="task_label"]');
+                    if (taskForm && localStorage.getItem(STORAGE_KEY)) {
+                        setTimeout(() => preRemplirFormulaire(), 300);
                     }
                 }
             });
@@ -44,7 +54,10 @@
         if (taskContainer) {
             ajouterBoutonDupliquer(taskContainer);
         }
-        preRemplirFormulaire();
+        if (localStorage.getItem(STORAGE_KEY)) {
+            selectionnerAjouterTache();
+            preRemplirFormulaire();
+        }
     }, 500);
 
     function ajouterBoutonDupliquer(taskContainer) {
@@ -56,7 +69,6 @@
         const btnTerminee = btnBar.querySelector('a[data-status="close"]');
         if (!btnTerminee) return;
 
-        // Même style que les autres boutons Modulr
         const newCell = document.createElement('td');
         newCell.className = 'medium_padding align_center four_tenths_width border_thin_silver_right';
         newCell.innerHTML = `
@@ -136,14 +148,39 @@
         
         if (btnAdd) {
             btnAdd.click();
+            // Attendre que la modale s'ouvre puis cliquer sur "Ajouter une tâche"
+            setTimeout(() => selectionnerAjouterTache(), 500);
         } else {
             if (typeof Modulr !== 'undefined' && Modulr.Task && Modulr.Task.Manage) {
                 Modulr.Task.Manage(0, entityClassName, entityId);
+                setTimeout(() => selectionnerAjouterTache(), 500);
             } else {
                 const anyAddBtn = document.querySelector('a.task_manage[id*="task:0"]');
-                if (anyAddBtn) anyAddBtn.click();
+                if (anyAddBtn) {
+                    anyAddBtn.click();
+                    setTimeout(() => selectionnerAjouterTache(), 500);
+                }
             }
         }
+    }
+
+    function selectionnerAjouterTache() {
+        // Chercher le radio button "Ajouter une tâche"
+        const radioTache = document.querySelector('#task_mode_from_scratch');
+        const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
+        
+        if (radioTache) {
+            radioTache.checked = true;
+            radioTache.dispatchEvent(new Event('change', { bubbles: true }));
+            radioTache.dispatchEvent(new Event('click', { bubbles: true }));
+        }
+        
+        if (labelTache) {
+            labelTache.click();
+        }
+        
+        // Attendre que le formulaire s'affiche puis pré-remplir
+        setTimeout(() => preRemplirFormulaire(), 500);
     }
 
     function preRemplirFormulaire() {
@@ -152,14 +189,16 @@
 
         const data = JSON.parse(savedData);
 
-        const inputLibelle = document.querySelector('input[name="task_label"], input[name="label"], #task_label');
+        // Libellé - essayer plusieurs sélecteurs possibles
+        const inputLibelle = document.querySelector('input[name="task_label"], input[name="label"], #task_label, input[name="event_label"]');
         if (inputLibelle && data.libelle) {
             inputLibelle.value = data.libelle;
             inputLibelle.dispatchEvent(new Event('input', { bubbles: true }));
             inputLibelle.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
-        const textareaDesc = document.querySelector('textarea[name="task_content"], textarea[name="content"], #task_content');
+        // Description - essayer plusieurs sélecteurs possibles
+        const textareaDesc = document.querySelector('textarea[name="task_content"], textarea[name="content"], #task_content, textarea[name="event_content"]');
         if (textareaDesc && data.description) {
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = data.description;
@@ -168,13 +207,17 @@
             textareaDesc.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
+        // TinyMCE (si utilisé)
         setTimeout(() => {
             if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
-                tinymce.activeEditor.setContent(data.description || '');
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = data.description || '';
+                tinymce.activeEditor.setContent(tempDiv.textContent || tempDiv.innerText || '');
             }
         }, 500);
 
-        const selectAssignee = document.querySelector('select[name="task_user_id"], select[name="user_id"], #task_user_id');
+        // Assigné - essayer plusieurs sélecteurs possibles
+        const selectAssignee = document.querySelector('select[name="task_user_id"], select[name="user_id"], #task_user_id, select[name="event_user_id"]');
         if (selectAssignee && data.assignee) {
             const options = selectAssignee.querySelectorAll('option');
             options.forEach(opt => {
@@ -192,7 +235,10 @@
             }, 100);
         }
 
-        localStorage.removeItem(STORAGE_KEY);
+        // Nettoyer après utilisation (avec un petit délai pour être sûr)
+        setTimeout(() => {
+            localStorage.removeItem(STORAGE_KEY);
+        }, 1000);
     }
 
 })();
