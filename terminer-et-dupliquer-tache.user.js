@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.3.0
+// @version      1.4.0
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -188,7 +188,7 @@
         // 2. Attendre que les champs apparaissent puis les remplir
         setTimeout(() => {
             remplirChamps(data);
-        }, 400);
+        }, 500);
     }
 
     function remplirChamps(data) {
@@ -212,43 +212,57 @@
             console.log('[LTOA] Description remplie');
         }
 
-        // Assigné - #task_actor (select avec valeurs type "user:24")
-        const selectAssignee = document.querySelector('#task_actor');
-        if (selectAssignee && data.assignee) {
-            const options = selectAssignee.querySelectorAll('option');
-            let found = false;
-            
-            options.forEach(opt => {
-                const optText = opt.textContent.trim().toLowerCase();
-                const assigneeText = data.assignee.toLowerCase();
-                
-                // Correspondance souple (contient ou est contenu)
-                if (optText.includes(assigneeText) || assigneeText.includes(optText)) {
-                    selectAssignee.value = opt.value;
-                    found = true;
-                    console.log('[LTOA] Assigné trouvé:', opt.textContent, '=', opt.value);
-                }
-            });
-
-            if (found) {
-                selectAssignee.dispatchEvent(new Event('change', { bubbles: true }));
-                
-                // Mettre à jour le multipleSelect si présent
-                setTimeout(() => {
-                    try {
-                        if (typeof $ !== 'undefined' && $(selectAssignee).multipleSelect) {
-                            $(selectAssignee).multipleSelect('refresh');
-                        }
-                    } catch (e) {
-                        console.log('[LTOA] multipleSelect refresh error:', e);
-                    }
-                }, 100);
-            }
+        // Assigné - via multipleSelect (cliquer sur le radio dans le dropdown)
+        if (data.assignee) {
+            selectionnerAssigne(data.assignee);
         }
 
         // Nettoyer le localStorage
         localStorage.removeItem(STORAGE_KEY);
         console.log('[LTOA] Terminé !');
+    }
+
+    function selectionnerAssigne(assigneeName) {
+        console.log('[LTOA] Recherche assigné:', assigneeName);
+        
+        // Chercher dans les labels du multipleSelect pour task_actors_list_id
+        const allLabels = document.querySelectorAll('label.ms-label[title]');
+        
+        for (const label of allLabels) {
+            const title = label.getAttribute('title') || '';
+            const labelText = label.textContent.trim();
+            
+            // Vérifier si c'est un match (insensible à la casse)
+            if (title.toLowerCase().includes(assigneeName.toLowerCase()) ||
+                assigneeName.toLowerCase().includes(title.toLowerCase()) ||
+                labelText.toLowerCase().includes(assigneeName.toLowerCase())) {
+                
+                // Vérifier que c'est bien un radio pour l'assigné (contient "user:")
+                const radio = label.querySelector('input[type="radio"]');
+                if (radio && radio.value && radio.value.startsWith('user:')) {
+                    console.log('[LTOA] Trouvé assigné:', title, '=', radio.value);
+                    
+                    // Cocher le radio
+                    radio.checked = true;
+                    radio.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    // Cliquer sur le label pour déclencher multipleSelect
+                    label.click();
+                    
+                    // Mettre aussi à jour le select caché
+                    const selectAssignee = document.querySelector('#task_actor');
+                    if (selectAssignee) {
+                        selectAssignee.value = radio.value;
+                        selectAssignee.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    
+                    console.log('[LTOA] Assigné sélectionné !');
+                    return;
+                }
+            }
+        }
+        
+        console.log('[LTOA] Assigné non trouvé:', assigneeName);
     }
 
 })();
