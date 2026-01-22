@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.8.0
+// @version      1.8.1
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -93,12 +93,13 @@
             const descP = taskContainer.querySelector('table.table_list tbody tr:nth-child(2) p');
             if (descP) {
                 data.description = descP.innerHTML
-                    .replace(/<br\s*\/?>/gi, '\n')  // <br> → saut de ligne
+                    .replace(/\r?\n/g, ' ')          // Virer les sauts de ligne du HTML brut
+                    .replace(/<br\s*\/?>/gi, '\n')   // <br> → saut de ligne
                     .replace(/<[^>]*>/g, '')         // Supprimer autres balises HTML
-                    .replace(/\n{3,}/g, '\n\n')      // Max 2 sauts de ligne consécutifs
-                    .replace(/^\s+|\s+$/g, '')       // Trim début/fin
-                    .replace(/[ \t]+\n/g, '\n')      // Espaces avant saut de ligne
-                    .replace(/\n[ \t]+/g, '\n');     // Espaces après saut de ligne
+                    .replace(/[ \t]+/g, ' ')         // Espaces multiples → 1 espace
+                    .replace(/ ?\n ?/g, '\n')        // Espaces autour des sauts de ligne
+                    .replace(/\n{2,}/g, '\n\n')      // Max 2 sauts de ligne consécutifs
+                    .trim();                         // Trim début/fin
             }
 
             // Assignée à
