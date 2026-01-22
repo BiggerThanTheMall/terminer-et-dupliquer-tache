@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.8.3
+// @version      1.9
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -15,33 +15,6 @@
     'use strict';
 
     const STORAGE_KEY = 'ltoa_task_duplicate_data';
-    const FLAG_KEY = 'ltoa_task_ready_to_fill';
-
-    // Fonction utilitaire pour attendre qu'un élément apparaisse
-    function waitForElement(selector, timeout = 5000) {
-        return new Promise((resolve, reject) => {
-            const element = document.querySelector(selector);
-            if (element) {
-                resolve(element);
-                return;
-            }
-
-            const observer = new MutationObserver(() => {
-                const el = document.querySelector(selector);
-                if (el) {
-                    observer.disconnect();
-                    resolve(el);
-                }
-            });
-
-            observer.observe(document.body, { childList: true, subtree: true });
-
-            setTimeout(() => {
-                observer.disconnect();
-                reject(new Error(`[LTOA] Timeout: élément "${selector}" non trouvé après ${timeout}ms`));
-            }, timeout);
-        });
-    }
 
     const observer = new MutationObserver(() => {
         const taskContainer = document.querySelector('#task_container[data-task_id]');
@@ -49,8 +22,8 @@
             ajouterBoutonDupliquer(taskContainer);
         }
         
-        // Si on a des données à remplir ET qu'on est prêt (flag activé)
-        if (localStorage.getItem(STORAGE_KEY) && localStorage.getItem(FLAG_KEY)) {
+        // Si on a des données à remplir et que le formulaire est visible
+        if (localStorage.getItem(STORAGE_KEY)) {
             const taskName = document.querySelector('#task_name');
             if (taskName && taskName.offsetParent !== null) {
                 remplirFormulaire();
@@ -77,7 +50,7 @@
 
         btnTerminee.closest('td').parentNode.insertBefore(newCell, btnTerminee.closest('td'));
 
-        newCell.querySelector('.ltoa-dupliquer-btn').addEventListener('click', async (e) => {
+        newCell.querySelector('.ltoa-dupliquer-btn').addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             
@@ -90,7 +63,7 @@
                 assignee: ''
             };
 
-            // Description - nettoyage amélioré des retours à la ligne
+            // Description - nettoyage des retours à la ligne
             const descP = taskContainer.querySelector('table.table_list tbody tr:nth-child(2) p');
             if (descP) {
                 data.description = descP.innerHTML
@@ -113,60 +86,34 @@
                 }
             });
 
-            console.log('[LTOA] Données extraites:', data);
+            console.log('[LTOA] Données:', data);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 
-            // Récupérer l'ID de la tâche actuelle pour savoir quand elle est fermée
-            const currentTaskId = taskContainer.dataset.task_id;
-            console.log('[LTOA] Tâche actuelle ID:', currentTaskId);
-
             // Terminer la tâche
-            console.log('[LTOA] Clic sur Terminer...');
             btnTerminee.click();
 
-            // Attendre que la tâche actuelle soit fermée (container disparaît ou change d'ID)
-            try {
-                console.log('[LTOA] Attente fermeture tâche...');
-                await new Promise((resolve, reject) => {
-                    let attempts = 0;
-                    const maxAttempts = 50; // 5 secondes max
-                    
-                    const checkClosed = setInterval(() => {
-                        attempts++;
-                        const currentContainer = document.querySelector('#task_container[data-task_id]');
-                        
-                        // Tâche fermée si : plus de container OU container avec ID différent
-                        if (!currentContainer || currentContainer.dataset.task_id !== currentTaskId) {
-                            clearInterval(checkClosed);
-                            console.log('[LTOA] Tâche clôturée !');
-                            resolve();
-                        } else if (attempts >= maxAttempts) {
-                            clearInterval(checkClosed);
-                            reject(new Error('[LTOA] Timeout: la tâche ne s\'est pas fermée'));
-                        }
-                    }, 100);
-                });
-
-                // Petit délai pour laisser l'UI se stabiliser
-                await new Promise(r => setTimeout(r, 300));
-
-                console.log('[LTOA] Attente du bouton "Ajouter tâche"...');
-                const btnAdd = await waitForElement('a.task_manage[id^="task:0:"]', 3000);
-                console.log('[LTOA] Bouton trouvé, clic...');
-                btnAdd.click();
-
-                console.log('[LTOA] Attente du label "Ajouter une tâche"...');
-                const labelTache = await waitForElement('label[for="task_mode_from_scratch"]', 3000);
-                console.log('[LTOA] Label trouvé, clic...');
-                labelTache.click();
-
-                // Maintenant on peut remplir
-                localStorage.setItem(FLAG_KEY, 'true');
-                console.log('[LTOA] Flag activé, remplissage autorisé...');
-            } catch (error) {
-                console.error(error.message);
-                alert('Erreur lors de la duplication. Vérifiez la console (F12) pour plus de détails.');
-            }
+            // Ouvrir nouvelle tâche après 800ms
+            setTimeout(() => {
+                const btnAdd = document.querySelector('a.task_manage[id^="task:0:"]');
+                if (btnAdd) {
+                    console.log('[LTOA] Bouton "Ajouter tâche" trouvé, clic...');
+                    btnAdd.click();
+                } else {
+                    console.error('[LTOA] Bouton "Ajouter tâche" NON trouvé !');
+                    return;
+                }
+                
+                // Cliquer sur "Ajouter une tâche" après 500ms
+                setTimeout(() => {
+                    const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
+                    if (labelTache) {
+                        console.log('[LTOA] Label "Ajouter une tâche" trouvé, clic...');
+                        labelTache.click();
+                    } else {
+                        console.error('[LTOA] Label "Ajouter une tâche" NON trouvé !');
+                    }
+                }, 500);
+            }, 800);
         });
     }
 
@@ -244,7 +191,6 @@
         }
 
         localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(FLAG_KEY);
         console.log('[LTOA] Terminé !');
     }
 
