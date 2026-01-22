@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.8.1
+// @version      1.8.2
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -15,6 +15,7 @@
     'use strict';
 
     const STORAGE_KEY = 'ltoa_task_duplicate_data';
+    const FLAG_KEY = 'ltoa_task_ready_to_fill';
 
     // Fonction utilitaire pour attendre qu'un élément apparaisse
     function waitForElement(selector, timeout = 5000) {
@@ -48,8 +49,8 @@
             ajouterBoutonDupliquer(taskContainer);
         }
         
-        // Si on a des données à remplir et que le formulaire est visible
-        if (localStorage.getItem(STORAGE_KEY)) {
+        // Si on a des données à remplir ET qu'on est prêt (flag activé)
+        if (localStorage.getItem(STORAGE_KEY) && localStorage.getItem(FLAG_KEY)) {
             const taskName = document.querySelector('#task_name');
             if (taskName && taskName.offsetParent !== null) {
                 remplirFormulaire();
@@ -131,7 +132,9 @@
                 console.log('[LTOA] Label trouvé, clic...');
                 labelTache.click();
 
-                console.log('[LTOA] Formulaire ouvert, remplissage en cours...');
+                // Maintenant on peut remplir
+                localStorage.setItem(FLAG_KEY, 'true');
+                console.log('[LTOA] Flag activé, remplissage autorisé...');
             } catch (error) {
                 console.error(error.message);
                 alert('Erreur lors de la duplication. Vérifiez la console (F12) pour plus de détails.');
@@ -213,6 +216,7 @@
         }
 
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(FLAG_KEY);
         console.log('[LTOA] Terminé !');
     }
 
