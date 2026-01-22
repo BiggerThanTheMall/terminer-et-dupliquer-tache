@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.8.2
+// @version      1.8.3
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -116,12 +116,40 @@
             console.log('[LTOA] Données extraites:', data);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 
+            // Récupérer l'ID de la tâche actuelle pour savoir quand elle est fermée
+            const currentTaskId = taskContainer.dataset.task_id;
+            console.log('[LTOA] Tâche actuelle ID:', currentTaskId);
+
             // Terminer la tâche
             console.log('[LTOA] Clic sur Terminer...');
             btnTerminee.click();
 
-            // Attendre et ouvrir nouvelle tâche
+            // Attendre que la tâche actuelle soit fermée (container disparaît ou change d'ID)
             try {
+                console.log('[LTOA] Attente fermeture tâche...');
+                await new Promise((resolve, reject) => {
+                    let attempts = 0;
+                    const maxAttempts = 50; // 5 secondes max
+                    
+                    const checkClosed = setInterval(() => {
+                        attempts++;
+                        const currentContainer = document.querySelector('#task_container[data-task_id]');
+                        
+                        // Tâche fermée si : plus de container OU container avec ID différent
+                        if (!currentContainer || currentContainer.dataset.task_id !== currentTaskId) {
+                            clearInterval(checkClosed);
+                            console.log('[LTOA] Tâche clôturée !');
+                            resolve();
+                        } else if (attempts >= maxAttempts) {
+                            clearInterval(checkClosed);
+                            reject(new Error('[LTOA] Timeout: la tâche ne s\'est pas fermée'));
+                        }
+                    }, 100);
+                });
+
+                // Petit délai pour laisser l'UI se stabiliser
+                await new Promise(r => setTimeout(r, 300));
+
                 console.log('[LTOA] Attente du bouton "Ajouter tâche"...');
                 const btnAdd = await waitForElement('a.task_manage[id^="task:0:"]', 3000);
                 console.log('[LTOA] Bouton trouvé, clic...');
