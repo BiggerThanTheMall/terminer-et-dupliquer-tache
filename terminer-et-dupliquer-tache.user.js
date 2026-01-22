@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.7.1
+// @version      1.8.0
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -15,6 +15,32 @@
     'use strict';
 
     const STORAGE_KEY = 'ltoa_task_duplicate_data';
+
+    // Fonction utilitaire pour attendre qu'un élément apparaisse
+    function waitForElement(selector, timeout = 5000) {
+        return new Promise((resolve, reject) => {
+            const element = document.querySelector(selector);
+            if (element) {
+                resolve(element);
+                return;
+            }
+
+            const observer = new MutationObserver(() => {
+                const el = document.querySelector(selector);
+                if (el) {
+                    observer.disconnect();
+                    resolve(el);
+                }
+            });
+
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            setTimeout(() => {
+                observer.disconnect();
+                reject(new Error(`[LTOA] Timeout: élément "${selector}" non trouvé après ${timeout}ms`));
+            }, timeout);
+        });
+    }
 
     const observer = new MutationObserver(() => {
         const taskContainer = document.querySelector('#task_container[data-task_id]');
@@ -50,7 +76,7 @@
 
         btnTerminee.closest('td').parentNode.insertBefore(newCell, btnTerminee.closest('td'));
 
-        newCell.querySelector('.ltoa-dupliquer-btn').addEventListener('click', (e) => {
+        newCell.querySelector('.ltoa-dupliquer-btn').addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
             
@@ -63,10 +89,16 @@
                 assignee: ''
             };
 
-            // Description
+            // Description - nettoyage amélioré des retours à la ligne
             const descP = taskContainer.querySelector('table.table_list tbody tr:nth-child(2) p');
             if (descP) {
-                data.description = descP.innerHTML.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '');
+                data.description = descP.innerHTML
+                    .replace(/<br\s*\/?>/gi, '\n')  // <br> → saut de ligne
+                    .replace(/<[^>]*>/g, '')         // Supprimer autres balises HTML
+                    .replace(/\n{3,}/g, '\n\n')      // Max 2 sauts de ligne consécutifs
+                    .replace(/^\s+|\s+$/g, '')       // Trim début/fin
+                    .replace(/[ \t]+\n/g, '\n')      // Espaces avant saut de ligne
+                    .replace(/\n[ \t]+/g, '\n');     // Espaces après saut de ligne
             }
 
             // Assignée à
@@ -79,23 +111,30 @@
                 }
             });
 
-            console.log('[LTOA] Données:', data);
+            console.log('[LTOA] Données extraites:', data);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 
             // Terminer la tâche
+            console.log('[LTOA] Clic sur Terminer...');
             btnTerminee.click();
 
-            // Ouvrir nouvelle tâche après 800ms
-            setTimeout(() => {
-                const btnAdd = document.querySelector('a.task_manage[id^="task:0:"]');
-                if (btnAdd) btnAdd.click();
-                
-                // Cliquer sur "Ajouter une tâche" après 500ms
-                setTimeout(() => {
-                    const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
-                    if (labelTache) labelTache.click();
-                }, 500);
-            }, 800);
+            // Attendre et ouvrir nouvelle tâche
+            try {
+                console.log('[LTOA] Attente du bouton "Ajouter tâche"...');
+                const btnAdd = await waitForElement('a.task_manage[id^="task:0:"]', 3000);
+                console.log('[LTOA] Bouton trouvé, clic...');
+                btnAdd.click();
+
+                console.log('[LTOA] Attente du label "Ajouter une tâche"...');
+                const labelTache = await waitForElement('label[for="task_mode_from_scratch"]', 3000);
+                console.log('[LTOA] Label trouvé, clic...');
+                labelTache.click();
+
+                console.log('[LTOA] Formulaire ouvert, remplissage en cours...');
+            } catch (error) {
+                console.error(error.message);
+                alert('Erreur lors de la duplication. Vérifiez la console (F12) pour plus de détails.');
+            }
         });
     }
 
