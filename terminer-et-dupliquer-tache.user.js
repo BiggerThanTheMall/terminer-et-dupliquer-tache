@@ -103,19 +103,19 @@
                     return;
                 }
                 
-                // Cliquer sur "Ajouter une tâche" après 500ms
-                setTimeout(() => {
-                    const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
-                    if (labelTache) {
-                        console.log('[LTOA] Label "Ajouter une tâche" trouvé, clic...');
-                        labelTache.click();
-                    } else {
-                        console.error('[LTOA] Label "Ajouter une tâche" NON trouvé !');
-                    }
-                }, 500);
-            }, 800);
-        });
+// Attendre que le label apparaisse et cliquer
+function attendreEtCliquer(tentative = 0) {
+    const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
+    if (labelTache) {
+        console.log('[LTOA] Label "Ajouter une tâche" trouvé, clic...');
+        labelTache.click();
+    } else if (tentative < 20) {
+        setTimeout(() => attendreEtCliquer(tentative + 1), 100);
+    } else {
+        console.error('[LTOA] Label "Ajouter une tâche" NON trouvé après 2s !');
     }
+}
+setTimeout(attendreEtCliquer, 100);
 
     function remplirFormulaire() {
         const savedData = localStorage.getItem(STORAGE_KEY);
