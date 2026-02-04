@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTOA - Terminer et Dupliquer Tâche
 // @namespace    https://github.com/sheana-ltoa
-// @version      1.9.2
+// @version      1.9.3
 // @description  Ajoute un bouton pour terminer une tâche et en créer une nouvelle avec les mêmes infos
 // @author       Sheana KRIEF - LTOA Assurances
 // @match        https://courtage.modulr.fr/*
@@ -103,19 +103,19 @@
                     return;
                 }
                 
-// Attendre que le label apparaisse et cliquer
-function attendreEtCliquer(tentative = 0) {
-    const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
-    if (labelTache) {
-        console.log('[LTOA] Label "Ajouter une tâche" trouvé, clic...');
-        labelTache.click();
-    } else if (tentative < 20) {
-        setTimeout(() => attendreEtCliquer(tentative + 1), 100);
-    } else {
-        console.error('[LTOA] Label "Ajouter une tâche" NON trouvé après 2s !');
+// Cliquer sur "Ajouter une tâche" après 500ms
+                setTimeout(() => {
+                    const labelTache = document.querySelector('label[for="task_mode_from_scratch"]');
+                    if (labelTache) {
+                        console.log('[LTOA] Label "Ajouter une tâche" trouvé, clic...');
+                        labelTache.click();
+                    } else {
+                        console.error('[LTOA] Label "Ajouter une tâche" NON trouvé !');
+                    }
+                }, 800);
+            }, 800);
+        });
     }
-}
-setTimeout(attendreEtCliquer, 100);
 
     function remplirFormulaire() {
         const savedData = localStorage.getItem(STORAGE_KEY);
